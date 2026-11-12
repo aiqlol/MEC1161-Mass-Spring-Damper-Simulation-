@@ -1,4 +1,4 @@
-# MEC1161 Mass-Spring-Damper Simulation
+MEC1161 Mass-Spring-Damper Simulation
 
 C program that simulates a mass-spring-damper system using Newton's second law, `m*a = F(t) - c*v - k*x`, solved with Forward Euler or 4th-order Runge-Kutta (RK4).
 
