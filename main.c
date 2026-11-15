@@ -4,7 +4,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include "viz.h"
 #include "data.h"
 #include "msd.h"
 
@@ -245,6 +245,7 @@ int main(void)
     printf("%lu data points stored.\n", (unsigned long)results.count);
     printf("Results exported to %s.\n", DEFAULT_CSV_FILENAME);
 
+    viz_menu(results.states, (int)results.count, &params, step_function);
     simulation_data_free(&results);
     return 0;
 }
