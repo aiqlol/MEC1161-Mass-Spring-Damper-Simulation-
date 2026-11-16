@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<CodeBlocks_project_file>
+	<FileVersion major="1" minor="6" />
+	<Project>
+		<Option title="MEC1161_MassSpringDamper_All" />
+		<Option pch_mode="2" />
+		<Option compiler="gcc" />
+		<Build>
+			<Target title="Console">
+				<Option output="bin/Console/MassSpringDamper" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/Console/" />
+				<Option type="1" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-g" />
+					<Add option="-Wpedantic" />
+				</Compiler>
+			</Target>
+			<Target title="GUI">
+				<Option output="bin/GUI/MSD_GUI" prefix_auto="1" extension_auto="1" />
+				<Option object_output="obj/GUI/" />
+				<Option type="0" />
+				<Option compiler="gcc" />
+				<Compiler>
+					<Add option="-g" />
+				</Compiler>
+				<Linker>
+					<Add option="-mwindows" />
+					<Add library="gdi32" />
+					<Add library="user32" />
+				</Linker>
+			</Target>
+		</Build>
+		<Compiler>
+			<Add option="-Wall" />
+			<Add option="-Wextra" />
+			<Add option="-std=c99" />
+		</Compiler>
+		<Linker>
+			<Add library="m" />
+		</Linker>
+		<Unit filename="main.c">
+			<Option compilerVar="CC" />
+			<Option target="Console" />
+		</Unit>
+		<Unit filename="viz.c">
+			<Option compilerVar="CC" />
+			<Option target="Console" />
+		</Unit>
+		<Unit filename="viz.h">
+			<Option target="Console" />
+		</Unit>
+		<Unit filename="gui.c">
+			<Option compilerVar="CC" />
+			<Option target="GUI" />
+		</Unit>
+		<Unit filename="model.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="data.c">
+			<Option compilerVar="CC" />
+		</Unit>
+		<Unit filename="msd.h" />
+		<Unit filename="data.h" />
+		<Extensions>
+			<lib_finder disable_auto="1" />
+		</Extensions>
+	</Project>
+</CodeBlocks_project_file>
