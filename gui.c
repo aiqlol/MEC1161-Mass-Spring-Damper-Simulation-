@@ -11,7 +11,9 @@
 #define NFIELDS 9                                          // number of input boxes
 #define MAX_GUI_STEPS 2000000.0                            // largest run the window allows
 
-enum { ID_PRESET = 100, ID_METHOD, ID_PLOTVAR, ID_RUN, ID_EXPORT, ID_EDIT0 = 200 };  // control IDs
+enum { ID_PRESET = 100, ID_METHOD, ID_PLOTVAR, ID_RUN, ID_EXPORT, ID_PLAY, ID_EDIT0 = 200 };  // control IDs
+#define ID_TIMER 1                                         // animation timer
+#define ANIM_H 170                                         // height of the animation strip (pixels)
 enum { F_M, F_C, F_K, F_X0, F_V0, F_F0, F_W, F_T, F_DT }; // index of each input box
 
 static const char *LABELS[NFIELDS] = {
@@ -33,13 +35,18 @@ static const Preset PRESETS[] = {                          //  m    c      k   x
 };
 #define NPRESETS ((int)(sizeof PRESETS / sizeof PRESETS[0]))
 
-static HWND hEdit[NFIELDS], hPreset, hMethod, hPlotVar, hInfo, hStatus;   // control handles
+static HWND hEdit[NFIELDS], hPreset, hMethod, hPlotVar, hInfo, hStatus, hPlay;   // control handles
 static SimulationData results;                             // results of the last run
 static int have_results = 0;                               // 1 after a successful run
 static int status_error = 0;                               // 1 = show status in red
 static int filling = 0;                                    // 1 while a preset fills the boxes
 static char run_method[40] = "";                           // method used for the last run
 static RECT plotRect;                                      // where the graph is drawn
+static Params run_p;                                       // inputs of the last run
+static double run_xmax = 0;                                // largest |x| of the last run
+static int anim_frame = 0;                                 // state shown in the animation
+static int playing = 0;                                    // 1 while the animation runs
+static DWORD anim_start;                                   // clock time (ms) that matches t = 0
 
 static HWND make(HWND parent, const char *cls, const char *text, DWORD style,
                  int x, int y, int w, int h, int id)
@@ -124,10 +131,38 @@ static void fill_preset(int idx)
     update_info();                                         // refresh the summary
 }
 
+static void stop_anim(HWND hwnd)
+{
+    if (playing) KillTimer(hwnd, ID_TIMER);                // stop the ticks
+    playing = 0;
+    SetWindowTextA(hPlay, "Play animation");
+}
+
+static void start_anim(HWND hwnd)
+{
+    if (!have_results) { set_status("Run a simulation first.", 1); return; }
+    if (anim_frame >= (int)results.count - 1) anim_frame = 0;   // at the end: start again
+    double t_now = results.states[anim_frame].t - results.states[0].t;   // time already shown
+    anim_start = GetTickCount() - (DWORD)(t_now * 1000.0); // clock time that matches t = 0
+    SetTimer(hwnd, ID_TIMER, 30, NULL);                    // about 33 frames per second
+    playing = 1;
+    SetWindowTextA(hPlay, "Stop");
+}
+
+static void anim_tick(HWND hwnd)
+{
+    double el = (GetTickCount() - anim_start) / 1000.0;    // real seconds since t = 0
+    int f = (int)(el / run_p.dt + 0.5);                    // matching state number
+    if (f >= (int)results.count - 1) { f = (int)results.count - 1; stop_anim(hwnd); }   // last state: stop
+    anim_frame = f;
+    InvalidateRect(hwnd, &plotRect, FALSE);                // redraw animation and graph
+}
+
 static void run_simulation(HWND hwnd)
 {
     Params p;
     char msg[160];
+    stop_anim(hwnd);                                       // a new run stops the old animation
     if (!read_params(&p, msg, sizeof msg)) { set_status(msg, 1); return; }   // bad input
     int n = num_steps(&p) + 1;                             // states including t = 0
     if (!simulation_data_allocate(&results, (size_t)n)) { set_status("Not enough memory for this run.", 1); return; }
@@ -138,6 +173,9 @@ static void run_simulation(HWND hwnd)
     double xmax = 0;
     for (int i = 0; i < n; i++)                            // largest displacement
         if (fabs(results.states[i].x) > xmax) xmax = fabs(results.states[i].x);
+    run_p = p;                                             // kept for the animation
+    run_xmax = xmax;
+    anim_frame = 0;                                        // animation starts at t = 0
     snprintf(msg, sizeof msg, "Done: %d points with %s.\nx at the end = %.6f m, largest |x| = %.6f m",
              n, run_method, results.states[n - 1].x, xmax);
     set_status(msg, 0);
@@ -164,6 +202,85 @@ static void nice_label(char *buf, size_t len, double v)
     snprintf(buf, len, "%.3g", v);
 }
 
+static void line(HDC dc, int x0, int y0, int x1, int y1)
+{
+    MoveToEx(dc, x0, y0, NULL);                            // start point
+    LineTo(dc, x1, y1);                                    // end point
+}
+
+static void draw_anim(HDC dc, int W)
+{
+    const State *s = &results.states[anim_frame];          // state to show
+    int gy = ANIM_H - 30;                                  // ground level
+    int cy = gy - 25;                                      // centre height of the block
+    int wall = 30;                                         // wall position
+    int restL = W / 2 - 30;                                // block left edge when x = 0
+    int A = (int)(0.4 * (restL - wall));                   // pixels for the largest |x|
+    int bx = restL + (run_xmax > 0 ? (int)(s->x / run_xmax * A) : 0);   // block left edge now
+    char buf[96];
+    HPEN thick = CreatePen(PS_SOLID, 3, RGB(40, 40, 40));
+    HPEN thin = CreatePen(PS_SOLID, 1, RGB(40, 40, 40));
+    HPEN spring = CreatePen(PS_SOLID, 2, RGB(0, 90, 200));
+    HPEN dash = CreatePen(PS_DASH, 1, RGB(110, 110, 110));
+    HPEN red = CreatePen(PS_SOLID, 2, RGB(200, 0, 0));
+    HBRUSH blockFill = CreateSolidBrush(RGB(170, 200, 240));
+    SelectObject(dc, thin);
+    for (int i = wall - 10; i < W - 20; i += 10) line(dc, i, gy + 10, i + 10, gy);   // ground hatching
+    for (int i = gy - 80; i < gy; i += 10) line(dc, wall - 10, i + 10, wall, i);     // wall hatching
+    SelectObject(dc, thick);
+    line(dc, wall, gy - 80, wall, gy);                     // wall
+    line(dc, wall, gy, W - 20, gy);                        // ground
+    SelectObject(dc, dash);
+    line(dc, restL, gy - 70, restL, gy + 8);               // equilibrium mark
+    TextOutA(dc, restL - 12, gy + 10, "x = 0", 5);
+    SelectObject(dc, spring);                              // spring: zigzag above the centre
+    int sy = cy - 12;
+    line(dc, wall, sy, wall + 10, sy);                     // straight end at the wall
+    MoveToEx(dc, wall + 10, sy, NULL);
+    for (int i = 1; i <= 14; i++)                          // 14 zigzag segments
+        LineTo(dc, wall + 10 + (bx - 10 - wall - 10) * i / 14, i == 14 ? sy : sy + ((i % 2) ? -8 : 8));
+    LineTo(dc, bx, sy);                                    // straight end at the block
+    SelectObject(dc, thin);                                // damper: below the centre
+    int dy = cy + 12;
+    int c0 = wall + 10;                                    // cylinder start
+    int c1 = wall + (int)(0.4 * (restL + A - wall)) + 4;   // cylinder end (piston never leaves it)
+    int px = wall + (int)(0.4 * (bx - wall));              // piston follows the block
+    line(dc, wall, dy, c0, dy);                            // rod from the wall
+    line(dc, c0, dy - 8, c1, dy - 8);                      // cylinder top
+    line(dc, c0, dy + 8, c1, dy + 8);                      // cylinder bottom
+    line(dc, c0, dy - 8, c0, dy + 8);                      // cylinder closed end
+    SelectObject(dc, thick);
+    line(dc, px, dy - 6, px, dy + 6);                      // piston
+    SelectObject(dc, thin);
+    line(dc, px, dy, bx, dy);                              // piston rod to the block
+    SelectObject(dc, thick);
+    SelectObject(dc, blockFill);
+    Rectangle(dc, bx, gy - 50, bx + 60, gy);               // the mass
+    TextOutA(dc, bx + 26, gy - 32, "m", 1);
+    if (run_p.F0 > 0) {                                    // force arrow above the block
+        double F = run_p.F0 * sin(run_p.w * s->t);         // F(t) = F0 sin(wt)
+        int len = (int)(F / run_p.F0 * 50);                // arrow length: 50 px at F = F0
+        int ax = bx + 30, ay = gy - 62;
+        SelectObject(dc, red);
+        line(dc, ax, ay, ax + len, ay);                    // arrow shaft
+        if (len > 4 || len < -4) {                         // arrow head in the force direction
+            int h = len > 0 ? -7 : 7;
+            line(dc, ax + len, ay, ax + len + h, ay - 5);
+            line(dc, ax + len, ay, ax + len + h, ay + 5);
+        }
+        TextOutA(dc, ax - 12, ay - 20, "F(t)", 4);
+    }
+    snprintf(buf, sizeof buf, "t = %.2f s     x = %+.4f m", s->t, s->x);
+    TextOutA(dc, 10, 8, buf, (int)strlen(buf));            // time and position now
+    const char *note = "Motion scaled to fit the panel";
+    TextOutA(dc, W - 190, 8, note, (int)strlen(note));
+    SelectObject(dc, GetStockObject(BLACK_PEN));
+    SelectObject(dc, GetStockObject(WHITE_BRUSH));
+    line(dc, 0, ANIM_H - 1, W, ANIM_H - 1);                // line between animation and graph
+    DeleteObject(thick); DeleteObject(thin); DeleteObject(spring);
+    DeleteObject(dash); DeleteObject(red); DeleteObject(blockFill);
+}
+
 static void draw_plot(HDC dc, int W, int H)
 {
     RECT all = {0, 0, W, H};
@@ -175,6 +292,7 @@ static void draw_plot(HDC dc, int W, int H)
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         return;
     }
+    draw_anim(dc, W);                                      // animation strip at the top
     int var = (int)SendMessageA(hPlotVar, CB_GETCURSEL, 0, 0);   // which quantity to plot
     static const char *TITLES[3] = {"Displacement x (m)", "Velocity v (m/s)", "Acceleration a (m/s^2)"};
     int n = (int)results.count;
@@ -188,10 +306,10 @@ static void draw_plot(HDC dc, int W, int H)
     if (hi - lo < 1e-12) { hi += 1; lo -= 1; }             // flat line: give it some height
     double pad = 0.05 * (hi - lo); hi += pad; lo -= pad;   // small margin above and below
     if (t1 <= t0) t1 = t0 + 1;
-    int L = 70, R = W - 20, T = 35, B = H - 45;            // graph area inside the panel
+    int L = 70, R = W - 20, T = ANIM_H + 35, B = H - 45;   // graph area below the animation
     char buf[64];
     snprintf(buf, sizeof buf, "%s vs time  (%s)", TITLES[var], run_method);
-    TextOutA(dc, L, 10, buf, (int)strlen(buf));            // graph title
+    TextOutA(dc, L, ANIM_H + 10, buf, (int)strlen(buf));   // graph title
     HPEN grid = CreatePen(PS_DOT, 1, RGB(200, 200, 200));
     HPEN axis = CreatePen(PS_SOLID, 1, RGB(60, 60, 60));
     HPEN line = CreatePen(PS_SOLID, 2, RGB(0, 90, 200));
@@ -220,8 +338,12 @@ static void draw_plot(HDC dc, int W, int H)
         int py = B - (int)((value_of(&results.states[i], var) - lo) / (hi - lo) * (B - T));
         if (i == 0) MoveToEx(dc, px, py, NULL); else LineTo(dc, px, py);
     }
+    HPEN mark = CreatePen(PS_SOLID, 1, RGB(200, 0, 0));
+    SelectObject(dc, mark);                                // red line at the animation time
+    int mx = L + (int)((results.states[anim_frame].t - t0) / (t1 - t0) * (R - L));
+    MoveToEx(dc, mx, T, NULL); LineTo(dc, mx, B);
     SelectObject(dc, GetStockObject(BLACK_PEN));
-    DeleteObject(grid); DeleteObject(axis); DeleteObject(line);
+    DeleteObject(grid); DeleteObject(axis); DeleteObject(line); DeleteObject(mark);
 }
 
 static void layout(HWND hwnd)
@@ -265,6 +387,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         SendMessageA(hPlotVar, CB_ADDSTRING, 0, (LPARAM)"Velocity v");
         SendMessageA(hPlotVar, CB_ADDSTRING, 0, (LPARAM)"Acceleration a");
         SendMessageA(hPlotVar, CB_SETCURSEL, 0, 0);
+        hPlay = make(hwnd, "BUTTON", "Play animation", BS_PUSHBUTTON | WS_TABSTOP, 600, 9, 130, 26, ID_PLAY);
         simulation_data_init(&results);                    // empty results store
         fill_preset(0);                                    // start with the Custom values
         layout(hwnd);
@@ -276,12 +399,13 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     case WM_GETMINMAXINFO:
         ((MINMAXINFO *)lp)->ptMinTrackSize.x = 800;        // smallest window allowed
-        ((MINMAXINFO *)lp)->ptMinTrackSize.y = 600;
+        ((MINMAXINFO *)lp)->ptMinTrackSize.y = 640;
         return 0;
     case WM_COMMAND: {
         int id = LOWORD(wp), code = HIWORD(wp);
         if ((id == ID_RUN && code == BN_CLICKED) || id == IDOK) run_simulation(hwnd);   // button or Enter key
         else if (id == ID_EXPORT && code == BN_CLICKED) export_csv();
+        else if (id == ID_PLAY && code == BN_CLICKED) { if (playing) stop_anim(hwnd); else start_anim(hwnd); }
         else if (id == ID_PRESET && code == CBN_SELCHANGE) fill_preset((int)SendMessageA(hPreset, CB_GETCURSEL, 0, 0));
         else if (id == ID_PLOTVAR && code == CBN_SELCHANGE) InvalidateRect(hwnd, &plotRect, FALSE);
         else if (id >= ID_EDIT0 && id < ID_EDIT0 + NFIELDS && code == EN_CHANGE && !filling) {
@@ -290,6 +414,9 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         }
         return 0;
     }
+    case WM_TIMER:
+        if (wp == ID_TIMER && playing) anim_tick(hwnd);    // next animation frame
+        return 0;
     case WM_CTLCOLORSTATIC:
         if ((HWND)lp == hStatus) {                         // status text: red for errors
             SetTextColor((HDC)wp, status_error ? RGB(190, 0, 0) : RGB(0, 110, 0));
@@ -313,6 +440,7 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
         return 0;
     }
     case WM_DESTROY:
+        stop_anim(hwnd);                                   // stop the timer
         simulation_data_free(&results);                    // release the results array
         PostQuitMessage(0);
         return 0;
@@ -333,7 +461,7 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE hPrev, LPSTR cmd, int show)
     if (!RegisterClassA(&wc)) return 1;
     HWND hwnd = CreateWindowExA(0, "MSDWindow", "Mass-Spring-Damper Simulator",
                                 WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT, CW_USEDEFAULT,
-                                1100, 660, NULL, NULL, hInst, NULL);   // main window
+                                1100, 720, NULL, NULL, hInst, NULL);   // main window
     if (hwnd == NULL) return 1;
     ShowWindow(hwnd, show);
     UpdateWindow(hwnd);
