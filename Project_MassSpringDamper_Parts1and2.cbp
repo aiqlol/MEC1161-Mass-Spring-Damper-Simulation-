@@ -46,6 +46,10 @@
         <Unit filename="data.c">
             <Option compilerVar="CC" />
         </Unit>
+        <Unit filename="viz.c">
+            <Option compilerVar="CC" />
+        </Unit>
+        <Unit filename="viz.h" />
         <Unit filename="msd.h" />
         <Unit filename="data.h" />
         <Extensions>
