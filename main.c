@@ -112,6 +112,8 @@ int main(void)
     double k;
     double x0;
     double v0;
+    double F0;                                   // forcing amplitude (N), 0 = no force
+    double w;                                    // forcing frequency (rad/s)
     double t_total;
     double dt;
     double estimated_steps;
@@ -158,7 +160,28 @@ int main(void)
         return 1;
     }
 
-    printf("\n3. Simulation time parameters\n");
+    printf("\n3. External force F(t) = F0 * sin(w * t)  (enter 0 for no force)\n");
+    if (!read_double("Enter forcing amplitude (F0 in N): ", &F0) || F0 < 0.0)
+    {
+        printf("[Error] Forcing amplitude must be 0 or greater.\n");   // free/damped case uses 0
+        return 1;
+    }
+
+    w = 0.0;                                                          // no force: frequency not needed
+    if (F0 > 0.0 &&                                                   // only ask when there is a force
+        (!read_double("Enter forcing frequency (w in rad/s): ", &w) || w <= 0.0))
+    {
+        printf("[Error] Forcing frequency must be greater than 0.\n");
+        return 1;
+    }
+
+    if (F0 > 0.0)                                                     // show where resonance is
+    {
+        printf("Natural frequency wn = sqrt(k/m) = %.4f rad/s (resonance near w = wn)\n",
+               sqrt(k / m));
+    }
+
+    printf("\n4. Simulation time parameters\n");
     if (!read_double("Enter total simulation time (t_total in s): ", &t_total) || t_total <= 0.0)
     {
         printf("[Error] Total simulation time must be greater than 0.\n");
@@ -178,7 +201,7 @@ int main(void)
         return 1;
     }
 
-    printf("\n4. Numerical method\n");
+    printf("\n5. Numerical method\n");
     printf("1. Forward Euler's Method\n");
     printf("2. Runge-Kutta 4th Order Method (RK4)\n");
     printf("3. Recommended Method (RK4)\n");
@@ -192,8 +215,8 @@ int main(void)
     params.m = m;
     params.c = c;
     params.k = k;
-    params.F0 = 0.0;
-    params.w = 0.0;
+    params.F0 = F0;                              // forcing amplitude from the user
+    params.w = w;                                // forcing frequency from the user
     params.x0 = x0;
     params.v0 = v0;
     params.dt = dt;
