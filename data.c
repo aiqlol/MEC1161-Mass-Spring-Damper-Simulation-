@@ -1,132 +1,94 @@
-#include <stdint.h>
+/* data.c - Part 3 (Syed): storing, printing and exporting the results */
+#include <stdio.h>
 #include <stdlib.h>
-
-#include "data.h"
+#include "msd.h"
 
 void simulation_data_init(SimulationData *data)
 {
-    if (data == NULL)
-    {
-        return;
-    }
-
-    data->states = NULL;
-    data->count = 0U;
+    data->states = NULL;                         /* no array yet */
+    data->count = 0;                             /* no States yet */
 }
 
-int simulation_data_allocate(SimulationData *data, size_t count)
+int simulation_data_allocate(SimulationData *data, int count)
 {
-    State *new_states;
+    State *new_states;                           /* address of the new array */
 
-    if (data == NULL || count == 0U || count > SIZE_MAX / sizeof(State))
+    if (count <= 0)                              /* nothing to allocate */
     {
         return 0;
     }
 
-    new_states = (State *)calloc(count, sizeof(State));
-    if (new_states == NULL)
+    new_states = (State *)calloc(count, sizeof(State));   /* count States, all set to 0 */
+    if (new_states == NULL)                      /* not enough memory */
     {
         return 0;
     }
 
-    /* Replace any previous allocation only after the new allocation succeeds. */
-    free(data->states);
-    data->states = new_states;
-    data->count = count;
-
+    free(data->states);                          /* release any old array (free(NULL) is safe) */
+    data->states = new_states;                   /* keep the new array */
+    data->count = count;                         /* remember its size */
     return 1;
 }
 
 void simulation_data_free(SimulationData *data)
 {
-    if (data == NULL)
-    {
-        return;
-    }
-
-    free(data->states);
-    data->states = NULL;
-    data->count = 0U;
+    free(data->states);                          /* return the memory to the heap */
+    data->states = NULL;                         /* stop the old address being used */
+    data->count = 0;
 }
 
-int simulation_data_print(const SimulationData *data, FILE *stream)
+int simulation_data_print(SimulationData *data)
 {
-    size_t i;
+    int i;                                       /* row counter */
 
-    if (data == NULL || data->states == NULL || data->count == 0U || stream == NULL)
+    if (data->states == NULL || data->count <= 0)   /* nothing to print */
     {
         return 0;
     }
 
-    if (fprintf(stream, "\n%10s %12s %12s %14s\n",
-                "t (s)", "x (m)", "v (m/s)", "a (m/s^2)") < 0)
+    printf("\n%10s %12s %12s %14s\n", "t (s)", "x (m)", "v (m/s)", "a (m/s^2)");   /* table heading */
+    for (i = 0; i < data->count; i++)            /* one row per State */
     {
-        return 0;
+        printf("%10.4f %12.6f %12.6f %14.6f\n",
+               data->states[i].t, data->states[i].x, data->states[i].v, data->states[i].a);
     }
-
-    for (i = 0U; i < data->count; i++)
-    {
-        const State *state = &data->states[i];
-
-        if (fprintf(stream, "%10.4f %12.6f %12.6f %14.6f\n",
-                    state->t, state->x, state->v, state->a) < 0)
-        {
-            return 0;
-        }
-    }
-
-    return ferror(stream) == 0;
+    return 1;
 }
 
-int simulation_data_export_csv(const SimulationData *data, const char *filename)
+int simulation_data_export_csv(SimulationData *data, char filename[])
 {
-    FILE *file;
-    size_t i;
-    int success = 1;
+    FILE *file_ptr;                              /* the CSV file */
+    int i;                                       /* row counter */
 
-    if (data == NULL || data->states == NULL || data->count == 0U ||
-        filename == NULL || filename[0] == '\0')
+    if (data->states == NULL || data->count <= 0)   /* nothing to save */
     {
         return 0;
     }
 
-    file = fopen(filename, "w");
-    if (file == NULL)
+    if ((file_ptr = fopen(filename, "w")) == NULL)  /* open for writing (overwrites old file) */
+    {
+        return 0;                                /* could not open, e.g. file open in Excel */
+    }
+
+    fprintf(file_ptr, "time_s,displacement_m,velocity_m_per_s,acceleration_m_per_s2\n");   /* column names */
+    for (i = 0; i < data->count; i++)            /* one line per State */
+    {
+        fprintf(file_ptr, "%.10g,%.10g,%.10g,%.10g\n",
+                data->states[i].t, data->states[i].x, data->states[i].v, data->states[i].a);
+    }
+
+    if (fclose(file_ptr) != 0)                   /* fclose returns 0 when the file is saved */
     {
         return 0;
     }
-
-    /* Keep these column names stable for the Part 4 visualisation code. */
-    if (fprintf(file, "time_s,displacement_m,velocity_m_per_s,acceleration_m_per_s2\n") < 0)
-    {
-        success = 0;
-    }
-
-    for (i = 0U; success && i < data->count; i++)
-    {
-        const State *state = &data->states[i];
-
-        if (fprintf(file, "%.10g,%.10g,%.10g,%.10g\n",
-                    state->t, state->x, state->v, state->a) < 0)
-        {
-            success = 0;
-        }
-    }
-
-    if (fclose(file) != 0)
-    {
-        success = 0;
-    }
-
-    return success;
+    return 1;
 }
 
-const State *simulation_data_get(const SimulationData *data, size_t index)
+State *simulation_data_get(SimulationData *data, int index)
 {
-    if (data == NULL || data->states == NULL || index >= data->count)
+    if (data->states == NULL || index < 0 || index >= data->count)   /* index outside the array */
     {
         return NULL;
     }
-
-    return &data->states[index];
+    return &data->states[index];                 /* address of the requested State */
 }

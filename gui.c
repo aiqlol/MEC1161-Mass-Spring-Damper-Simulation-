@@ -6,7 +6,6 @@
 #include <ctype.h>
 #include <math.h>
 #include "msd.h"
-#include "data.h"
 
 #define NFIELDS 9                                          // number of input boxes
 #define MAX_GUI_STEPS 2000000.0                            // largest run the window allows
@@ -165,9 +164,9 @@ static void run_simulation(HWND hwnd)
     stop_anim(hwnd);                                       // a new run stops the old animation
     if (!read_params(&p, msg, sizeof msg)) { set_status(msg, 1); return; }   // bad input
     int n = num_steps(&p) + 1;                             // states including t = 0
-    if (!simulation_data_allocate(&results, (size_t)n)) { set_status("Not enough memory for this run.", 1); return; }
+    if (!simulation_data_allocate(&results, n)) { set_status("Not enough memory for this run.", 1); return; }
     int euler = (SendMessageA(hMethod, CB_GETCURSEL, 0, 0) == 1);   // 0 = RK4, 1 = Euler
-    simulate(results.states, n, &p, euler ? step_euler : step_rk4);   // run with the chosen solver
+    simulate(results.states, n, &p, euler ? METHOD_EULER : METHOD_RK4);   // run with the chosen solver
     strcpy(run_method, euler ? "Euler" : "RK4");
     have_results = 1;
     double xmax = 0;

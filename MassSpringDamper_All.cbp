@@ -47,9 +47,6 @@
 			<Option compilerVar="CC" />
 			<Option target="Console" />
 		</Unit>
-		<Unit filename="viz.h">
-			<Option target="Console" />
-		</Unit>
 		<Unit filename="gui.c">
 			<Option compilerVar="CC" />
 			<Option target="GUI" />
@@ -61,7 +58,6 @@
 			<Option compilerVar="CC" />
 		</Unit>
 		<Unit filename="msd.h" />
-		<Unit filename="data.h" />
 		<Extensions>
 			<lib_finder disable_auto="1" />
 		</Extensions>
